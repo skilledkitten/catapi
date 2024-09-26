@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Relay Service</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            width: 80%;
+            max-width: 600px;
+        }
+        select, input, button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #output {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            min-height: 100px;
+            white-space: pre-wrap;
+        }
+        #api-key-input {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>API Relay Service</h1>
+        <select id="endpoint" onchange="toggleApiKeyInput()">
+            <option value="openai">OpenAI</option>
+            <option value="google">Google</option>
+            <option value="perplexity">Perplexity</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="chipp">Chipp</option>
+            <option value="mistral">Mistral</option>
+        </select>
+        <input type="text" id="model" placeholder="Enter model name">
+        <input type="text" id="api-key-input" placeholder="Enter API Key (for Chipp)">
+        <input type="text" id="input" placeholder="Enter your message">
+        <button onclick="sendRequest()">Send Request</button>
+        <div id="output"></div>
+    </div>
+    <script>
+    function parseFormatting(text) {
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/_(.*?)_/g, '<em>$1</em>');
+    }
+
+    function toggleApiKeyInput() {
+        const endpoint = document.getElementById('endpoint').value;
+        const apiKeyInput = document.getElementById('api-key-input');
+        apiKeyInput.style.display = endpoint === 'chipp' ? 'block' : 'none';
+    }
+
+    async function sendRequest() {
+        const endpoint = document.getElementById('endpoint').value;
+        const model = document.getElementById('model').value;
+        const input = document.getElementById('input').value;
+        const apiKey = document.getElementById('api-key-input').value;
+        const output = document.getElementById('output');
+
+        output.innerHTML = 'Sending request...';
+
+        try {
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+
+            if (endpoint === 'chipp') {
+                headers['api-key'] = apiKey;
+            }
+
+            const response = await fetch(`/v1/${endpoint}/${model}`, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    messages: [{ role: 'user', content: input }]
+                })
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            output.innerHTML = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                try {
+                    const lines = chunk.split('\n').filter(line => line.trim() !== '');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = JSON.parse(line.slice(6));
+                            if (data.choices && data.choices.length > 0 && data.choices[0].delta && data.choices[0].delta.content) {
+                                output.innerHTML += parseFormatting(data.choices[0].delta.content);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error parsing chunk:', error);
+                }
+            }
+        } catch (error) {
+            output.innerHTML = `Error: ${error.message}`;
+        }
+    }
+    </script>
+</body>
+</html>
